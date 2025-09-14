@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Math Q/A PDF Viewer Demo</title>
+  <style>
+    :root { --gap: 16px; --btn: #3b82f6; --btn-text: #fff; }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", Arial, sans-serif; margin: 0; background: #f6f7fb; color: #111; }
+    header { position: sticky; top: 0; z-index: 10; background: #fff; border-bottom: 1px solid #e5e7eb; }
+    .toolbar { display: flex; gap: var(--gap); align-items: center; max-width: 1200px; margin: 0 auto; padding: 12px var(--gap); }
+    button { padding: 10px 16px; border: 0; border-radius: 12px; background: var(--btn); color: var(--btn-text); font-weight: 600; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,.08); }
+    button:disabled { opacity: .6; cursor: not-allowed; }
+    main { max-width: 1200px; margin: 0 auto; padding: var(--gap); }
+    .viewer { display: grid; grid-template-columns: 1fr; gap: 20px; }
+    .card { background: #fff; border-radius: 16px; box-shadow: 0 10px 24px rgba(0,0,0,.06); padding: 12px; }
+    .title { font-weight: 700; margin: 6px 8px 12px; font-size: 1.1rem; }
+    .canvas-wrap { width: 100%; position: relative; }
+    canvas { width: 100%; height: auto; display: block; border-radius: 12px; background: #fafafa; }
+    .hidden { display: none; }
+    .meta { color: #6b7280; font-size: .95rem; margin-left: 10px; }
+    .spinner { position: absolute; inset: 0; display: grid; place-items: center; font-size: .95rem; color: #6b7280; }
+  </style>
+  <!-- PDF.js (from CDN). If you change version, keep workerSrc in sync. -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" integrity="sha512-zmY2Vv0fZQxXbHj0EOcD+na+Yg2q/8g4mlbf81Emi5Uq3+vY0Hj7f8v3t9k/3z1dV1G4mC3zq9u9G1iP7GQFqw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script>
+    // IMPORTANT: The worker must match the pdf.js version above.
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  </script>
+</head>
+<body>
+  <header>
+    <div class="toolbar">
+      <button id="prevBtn">prev</button>
+      <button id="nextBtn">next</button>
+      <button id="toggleBtn">hide / show A</button>
+      <span class="meta" id="counter"></span>
+    </div>
+  </header>
+
+  <main>
+    <div class="viewer">
+      <section class="card" aria-labelledby="qLabel">
+        <div class="title" id="qLabel">Q) Question</div>
+        <div class="canvas-wrap" id="qWrap">
+          <div class="spinner" id="qSpin">Loading question…</div>
+          <canvas id="qCanvas"></canvas>
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="aLabel" id="aCard">
+        <div class="title" id="aLabel">A) Answer / Explanation</div>
+        <div class="canvas-wrap" id="aWrap">
+          <div class="spinner" id="aSpin">Loading answer…</div>
+          <canvas id="aCanvas"></canvas>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    // ======== CONFIGURE THESE TWO VALUES ========
+    const TOTAL = 10; // how many pairs you have
+    const BASE = "./"; // where your PDFs live (e.g., "https://yourname.github.io/qa/" or "./")
+    // ============================================
+
+    const zeroPad = (n) => String(n).padStart(2, "0");
+    const qUrl = (i) => `${BASE}Q_${zeroPad(i)}.pdf`;
+    const aUrl = (i) => `${BASE}A_${zeroPad(i)}.pdf`;
+
+    let index = 1; // 1-based
+    let qPDF = null, aPDF = null; // pdf.js document handles
+
+    const el = (id) => document.getElementById(id);
+    const prevBtn = el("prevBtn");
+    const nextBtn = el("nextBtn");
+    const toggleBtn = el("toggleBtn");
+    const counter = el("counter");
+
+    const qCanvas = el("qCanvas");
+    const aCanvas = el("aCanvas");
+    const qWrap = el("qWrap");
+    const aWrap = el("aWrap");
+    const aCard = el("aCard");
+    const qSpin = el("qSpin");
+    const aSpin = el("aSpin");
+
+    // Render a single-page PDF onto a canvas at device-pixel crispness.
+    async function renderPdfToCanvas(pdfDoc, canvas, container) {
+      if (!pdfDoc) return;
+      const page = await pdfDoc.getPage(1); // assume single-page per file
+      const viewport1x = page.getViewport({ scale: 1 });
+
+      // Fit to container width; re-render with devicePixelRatio for crispness.
+      const cssWidth = container.clientWidth;
+      const scale = cssWidth / viewport1x.width;
+      const dpr = window.devicePixelRatio || 1;
+      const viewport = page.getViewport({ scale: scale * dpr });
+
+      const ctx = canvas.getContext("2d", { alpha: false });
+      canvas.width = Math.floor(viewport.width);
+      canvas.height = Math.floor(viewport.height);
+      canvas.style.width = cssWidth + "px";
+      canvas.style.height = (viewport.height / dpr) + "px";
+
+      await page.render({ canvasContext: ctx, viewport }).promise;
+    }
+
+    async function loadCurrentPair() {
+      counter.textContent = `#${index} of ${TOTAL}`;
+      aCard.classList.remove("hidden"); // default: show A (user can hide)
+      toggleBtn.dataset.state = "showing";
+
+      // show spinners
+      qSpin.style.display = "grid"; aSpin.style.display = "grid";
+
+      try {
+        [qPDF, aPDF] = await Promise.all([
+          pdfjsLib.getDocument(qUrl(index)).promise,
+          pdfjsLib.getDocument(aUrl(index)).promise,
+        ]);
+        await Promise.all([
+          renderPdfToCanvas(qPDF, qCanvas, qWrap),
+          renderPdfToCanvas(aPDF, aCanvas, aWrap),
+        ]);
+      } catch (err) {
+        console.error(err);
+        alert("Failed to load one of the PDFs. Check the URLs and CORS.");
+      } finally {
+        qSpin.style.display = "none"; aSpin.style.display = "none";
+      }
+    }
+
+    // Re-render on resize/zoom to keep PDFs sharp when user pinch-zooms.
+    let resizeTimer = null;
+    window.addEventListener("resize", () => {
+      if (!qPDF || !aPDF) return;
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        renderPdfToCanvas(qPDF, qCanvas, qWrap);
+        if (!aCard.classList.contains("hidden")) {
+          renderPdfToCanvas(aPDF, aCanvas, aWrap);
+        }
+      }, 120);
+    });
+
+    prevBtn.addEventListener("click", () => {
+      if (index <= 1) { alert("no more questions"); return; }
+      index -= 1; loadCurrentPair();
+    });
+
+    nextBtn.addEventListener("click", () => {
+      if (index >= TOTAL) { alert("no more questions"); return; }
+      index += 1; loadCurrentPair();
+    });
+
+    toggleBtn.addEventListener("click", () => {
+      const showing = toggleBtn.dataset.state !== "hidden";
+      if (showing) {
+        aCard.classList.add("hidden");
+        toggleBtn.dataset.state = "hidden";
+      } else {
+        aCard.classList.remove("hidden");
+        toggleBtn.dataset.state = "showing";
+        // ensure crisp after toggling back in
+        if (aPDF) renderPdfToCanvas(aPDF, aCanvas, aWrap);
+      }
+    });
+
+    // Initial load
+    loadCurrentPair();
+  </script>
+</body>
+</html>
