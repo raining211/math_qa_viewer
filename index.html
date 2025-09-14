@@ -17,11 +17,15 @@
     .card { background: #fff; border-radius: 16px; box-shadow: 0 10px 24px rgba(0,0,0,.06); padding: 12px; }
     .title { font-weight: 700; margin: 6px 8px 12px; font-size: 1.1rem; }
 
-    /* 뷰어 캔버스 래퍼: 기본은 화면폭에 맞춤, 데스크톱에서만 최대폭 제한 */
+    /* 기본: 화면폭에 맞춤. PC에서만 최대폭 700px로 제한 */
     .canvas-wrap { width:100%; position:relative; max-width:900px; margin:0 auto; }
-    @media (min-width:1024px){ .canvas-wrap { max-width:500px; } } /* PC 전용 500px 상한 */
+    @media (min-width:1024px){
+      main { max-width:740px; }   /* 700px + 카드 패딩 여유 */
+      .canvas-wrap { max-width:700px; } /* PC 전용 700px 상한 */
+      .card { padding: 8px; }     /* 좌우 여백 약간 축소(선택) */
+    }
 
-    /* 캔버스 자체 마진 0, 추가 배경/라운드 제거 */
+    /* 캔버스: 여백/배경 제거 */
     canvas { width:100%; height:auto; display:block; margin:0; border-radius:0; background:transparent; }
 
     .hidden { display: none; }
@@ -105,13 +109,15 @@
       const cssWidth = container.clientWidth;
       const scale = cssWidth / viewport1x.width;
       const dpr = window.devicePixelRatio || 1;
-      const viewport = page.getViewport({ scale: scale * dpr });
+      const OVERSAMPLE = 1.5; // 더 선명하게(1.5~2 권장)
+
+      const viewport = page.getViewport({ scale: scale * dpr * OVERSAMPLE });
 
       const ctx = canvas.getContext("2d", { alpha: false });
       canvas.width = Math.floor(viewport.width);
       canvas.height = Math.floor(viewport.height);
       canvas.style.width = cssWidth + "px";
-      canvas.style.height = (viewport.height / dpr) + "px";
+      canvas.style.height = (viewport.height / (dpr * OVERSAMPLE)) + "px";
 
       await page.render({ canvasContext: ctx, viewport }).promise;
     }
