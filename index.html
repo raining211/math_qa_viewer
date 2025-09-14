@@ -16,8 +16,14 @@
     .viewer { display: grid; grid-template-columns: 1fr; gap: 20px; }
     .card { background: #fff; border-radius: 16px; box-shadow: 0 10px 24px rgba(0,0,0,.06); padding: 12px; }
     .title { font-weight: 700; margin: 6px 8px 12px; font-size: 1.1rem; }
+
+    /* 뷰어 캔버스 래퍼: 기본은 화면폭에 맞춤, 데스크톱에서만 최대폭 제한 */
     .canvas-wrap { width:100%; position:relative; max-width:900px; margin:0 auto; }
-    canvas { width: 100%; height: auto; display: block; border-radius: 12px; background: #fafafa; }
+    @media (min-width:1024px){ .canvas-wrap { max-width:500px; } } /* PC 전용 500px 상한 */
+
+    /* 캔버스 자체 마진 0, 추가 배경/라운드 제거 */
+    canvas { width:100%; height:auto; display:block; margin:0; border-radius:0; background:transparent; }
+
     .hidden { display: none; }
     .meta { color: #6b7280; font-size: .95rem; margin-left: 10px; }
     .spinner { position: absolute; inset: 0; display: grid; place-items: center; font-size: .95rem; color: #6b7280; }
